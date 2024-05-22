@@ -1,0 +1,2 @@
+# llama-code
+lama kodarı
