@@ -1,0 +1,94 @@
+import random
+from translate import Translator as tr
+import ollama
+import speech_recognition as sr
+from gtts import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
+import tempfile
+
+
+# Initialize translators for English to Turkish and vice versa
+translator_to_en = tr(to_lang="en", from_lang="tr")
+translator_to_tr = tr(to_lang="tr", from_lang="en")
+
+class TextBasedAssistant:
+    def __init__(self):
+        self.full_transcript = [
+            {"role": "system", "content": "You are a language model called Llama 3 created by Meta. Answer the questions being asked in less than 300 characters."},
+        ]
+        self.recognizer = sr.Recognizer()
+        self.running = True
+
+    def get_user_input(self):
+        """Captures and translates user input from speech."""
+        with sr.Microphone() as source:
+            print("Kullanıcı girişi bekleniyor...")
+            audio = self.recognizer.listen(source)
+
+        try:
+            user_input = self.recognizer.recognize_google(audio, language='tr')
+            print(f"Kullanıcı: {user_input}")
+
+            # Translate Turkish input to English
+            translated_input = translator_to_en.translate(user_input)
+            return translated_input
+        except sr.UnknownValueError:
+            print("Google Speech Recognition sesi anlayamadı.")
+            return ""
+        except sr.RequestError as e:
+            print(f"Google Speech Recognition hizmetinden sonuç alınamadı; {e}")
+            return ""
+
+    def generate_ai_response(self, user_input):
+        """Generates a response from the AI model and translates it to Turkish."""
+        self.full_transcript.append({"role": "user", "content": user_input})
+
+        response_stream = ollama.chat(
+            model="llama3",
+            messages=self.full_transcript,
+            stream=True,
+        )
+
+        response_text = ""
+        for chunk in response_stream:
+            response_text += chunk['message']['content']
+
+        self.full_transcript.append({"role": "assistant", "content": response_text})
+
+        # Translate English response to Turkish
+        translated_response = translator_to_tr.translate(response_text)
+        return translated_response
+
+    def text_to_speech(self, text):
+        """Converts text to speech and saves it as an MP3 file."""
+        tts = gTTS(text=text, lang='tr')
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+            tts.save(f.name)
+            audio_path = f.name
+
+        return audio_path
+
+    def play_audio(self, audio_path):
+        """Plays an audio file."""
+        audio = AudioSegment.from_file(audio_path, format="mp3")
+        play(audio)
+
+    def chat(self):
+        """Main chat loop that handles user inputs."""
+        while True:
+            user_input = self.get_user_input()
+            if user_input.lower() in ["exit", "quit"]:
+                print("Sohbet sonlandırıldı.")
+                self.running = False
+                break
+
+            response = self.generate_ai_response(user_input)
+            print(f"Bot: {response}")
+
+            audio_path = self.text_to_speech(response)
+            self.play_audio(audio_path)
+
+if __name__ == "__main__":
+    assistant = TextBasedAssistant()
+    assistant.chat()
